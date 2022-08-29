@@ -1,0 +1,88 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+our $VERSION = '1.0.0';
+
+use Readonly;
+use File::Basename   qw( basename );
+use Types::Standard  qw();
+use Params::Validate qw(:all);
+use Getopt::Long     ();
+use Email::Valid     ();
+
+Readonly my $USER_REGEX   => qr/[a-z0-9_]([a-z0-9_.]*[a-z0-9_])?/;
+Readonly my $DOMAIN_REGEX => qr/[a-z0-9.-]+/;
+
+Readonly my $VALIDATE_COMMAND_OPTIONS => sub {
+  return validate_with(
+    params => \@_,
+    spec   => {
+      email => {
+        type    => SCALAR,
+        untaint => 1,
+        callbacks => {
+          is_valid_email => sub { Email::Valid->address( $_[0] ) }
+        }
+      }
+    },
+    on_fail => sub {
+      my $error_message = $_[0];
+
+      # This is a total hack in lieu of some other solution.
+      # Basically, it removes the class string from the
+      # confess() call so it doesn't confuse the user.
+      $error_message =~ s/to main::__ANON__ //;
+      print "[ERROR] " . $error_message;
+
+      _usage(1);
+    }
+  );
+};
+
+my %COMMAND_LINE_OPTIONS = (
+  email => undef,
+);
+
+Getopt::Long::GetOptions(
+  'email=s' => \$COMMAND_LINE_OPTIONS{'email'},
+  'version' => sub { _show_version() },
+  'help|?'  => sub { _usage() },
+) || _usage(1);
+
+my %ARGS = $VALIDATE_COMMAND_OPTIONS->(%COMMAND_LINE_OPTIONS);
+
+my ($username, $domain) = split '@', $ARGS{'email'};
+my $modified_username = join '+', $username, time();
+print join '@', $modified_username, $domain . "\n";
+
+sub _show_version {
+  print 'v' . $VERSION . "\n";
+  exit;
+}
+
+sub _usage {
+  my $exit_val = shift;
+
+  $exit_val //= 0;
+
+  my $exe_name = basename $0;
+
+  print <<~ "EOF";
+  $exe_name --email=<EMAIL_ADDRESS>
+
+    --email         email address
+    --version|-v    display version information
+    --help|-h|-?    help documentation
+
+  Creates a unique Gmail address by converting the passed in email address
+  and adding a '+' "sub address".
+
+  Example:
+
+  foo\@bar.com => foo+1661804576\@bar.com
+  EOF
+
+  exit $exit_val;
+}
